@@ -27,6 +27,9 @@ const DATA_DIR = process.env.DATA_DIR || __dirname;
 
 if (!TOKEN) { console.error('Falta BOT_TOKEN'); process.exit(1); }
 
+/* URL del juego con cache-busting (cada botón abre una URL nueva => sin caché) */
+function appUrl(){ return WEBAPP_URL + (WEBAPP_URL.includes('?') ? '&' : '?') + 't=' + Date.now(); }
+
 /* ============================== PERSISTENCIA ============================== */
 const DB_FILE = path.join(DATA_DIR, 'purchases.json');
 const SCORES_FILE = path.join(DATA_DIR, 'scores.json');
@@ -114,7 +117,7 @@ async function show(chatId, messageId, text, kb) {
 const back = [{ text: '⬅️ Menú', callback_data: 'menu' }];
 const kbMain = () => ({
   inline_keyboard: [
-    [{ text: '🎮 Jugar ahora', web_app: { url: WEBAPP_URL } }],
+    [{ text: '🎮 Jugar ahora', web_app: { url: appUrl() } }],
     [{ text: '⭐ Premium', callback_data: 'premium' }, { text: '🧾 Mi historial', callback_data: 'historial' }],
     [{ text: '🏆 Ranking', callback_data: 'ranking' }, { text: '❓ Ayuda', callback_data: 'ayuda' }]
   ]
@@ -128,7 +131,7 @@ function kbPremium() {
 /* Teclado FIJO en la parte de abajo del chat (siempre visible) */
 const kbReply = () => ({
   keyboard: [
-    [{ text: '🎮 Jugar ahora', web_app: { url: WEBAPP_URL } }],
+    [{ text: '🎮 Jugar ahora', web_app: { url: appUrl() } }],
     [{ text: '⭐ Premium' }, { text: '🧾 Historial' }],
     [{ text: '🏆 Ranking' }, { text: '❓ Ayuda' }]
   ],
@@ -190,12 +193,12 @@ function screen(which, from) {
   switch (which) {
     case 'premium': {
       const total = totalStars(from.id);
-      return total > 0 ? { text: T_PREMIUM_ON(total), kb: { inline_keyboard: [[{ text: '🎮 Jugar', web_app: { url: WEBAPP_URL } }], back] } }
+      return total > 0 ? { text: T_PREMIUM_ON(total), kb: { inline_keyboard: [[{ text: '🎮 Jugar', web_app: { url: appUrl() } }], back] } }
                        : { text: T_PREMIUM_OFF(), kb: kbPremium() };
     }
     case 'historial': return { text: tHistorial(from.id), kb: { inline_keyboard: [back] } };
-    case 'ranking': return { text: tRanking(), kb: { inline_keyboard: [[{ text: '🎮 Jugar', web_app: { url: WEBAPP_URL } }], back] } };
-    case 'ayuda': return { text: T_AYUDA, kb: { inline_keyboard: [[{ text: '🎮 Jugar', web_app: { url: WEBAPP_URL } }], back] } };
+    case 'ranking': return { text: tRanking(), kb: { inline_keyboard: [[{ text: '🎮 Jugar', web_app: { url: appUrl() } }], back] } };
+    case 'ayuda': return { text: T_AYUDA, kb: { inline_keyboard: [[{ text: '🎮 Jugar', web_app: { url: appUrl() } }], back] } };
     default: return { text: T_START(from.first_name || 'investigador'), kb: kbMain() };
   }
 }
@@ -223,14 +226,14 @@ async function handleMessage(m) {
     const head = r.improved ? '🏆 <b>¡Nuevo récord guardado!</b>' : '📝 Puntuación recibida (no mejora tu récord).';
     return send(m.chat.id,
       `${head}\n\nPistas: <b>${r.clues}/5</b> · Cordura: <b>${r.sanity}%</b>\n\n` + tRanking(),
-      { inline_keyboard: [[{ text: '🎮 Jugar otra vez', web_app: { url: WEBAPP_URL } }], back] });
+      { inline_keyboard: [[{ text: '🎮 Jugar otra vez', web_app: { url: appUrl() } }], back] });
   }
   if (m.successful_payment) {
     const sp = m.successful_payment;
     recordPurchase(from, sp.total_amount, sp.invoice_payload);
     return send(m.chat.id,
       `✅ <b>¡Gracias por tu apoyo!</b>\nPago recibido: <b>${sp.total_amount} Stars</b>.\nPremium desbloqueado. 🎮`,
-      { inline_keyboard: [[{ text: '🎮 Jugar', web_app: { url: WEBAPP_URL } }], back] });
+      { inline_keyboard: [[{ text: '🎮 Jugar', web_app: { url: appUrl() } }], back] });
   }
   const text = (m.text || '').trim();
   // Botones del teclado inferior (reply keyboard)
@@ -281,5 +284,7 @@ process.on('SIGINT', () => { running = false; });
 (async () => {
   const me = await api('getMe', {});
   console.log(`[misterio-bot] @${me.username} en marcha (UI botones) · WebApp: ${WEBAPP_URL} · datos: ${DATA_DIR}`);
+  try { await api('setChatMenuButton', { menu_button: { type: 'web_app', text: 'Jugar', web_app: { url: appUrl() } } }); }
+  catch (e) { console.error('menuButton:', e.message); }
   poll();
 })();

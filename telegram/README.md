@@ -39,12 +39,22 @@ Variables:
 | `CRYPTO_ADDRESS` | Dirección TON para pagos crypto | — |
 | `CRYPTO_NANO` | Importe crypto en nanoTON (1 TON = 1e9) | `1000000000` |
 
-## 4) Comandos del bot
+## 4) Interfaz por BOTONES (sin comandos)
 
-- `/start` — bienvenida + botón **Jugar**.
-- `/play` — abre la Mini App.
-- `/pagar` — tienda: **Stars** (`sendInvoice`, moneda `XTR`) y **crypto TON**.
-- `/help` — ayuda y controles.
+El bot funciona con **botones inline** — no hace falta escribir comandos:
+
+- **🎮 Jugar ahora** — abre la Mini App.
+- **⭐ Premium** — estado + `sendInvoice` en **Stars** (`XTR`) o **crypto TON**.
+- **🧾 Mi historial** — pagos del usuario (se guardan en `purchases.json`).
+- **🏆 Ranking** — top 10 por pistas y cordura.
+- **❓ Ayuda** — controles.
+
+El **ranking** funciona sin servidor propio: la Mini App envía la puntuación al bot con
+`Telegram.WebApp.sendData(JSON.stringify({clues, sanity}))` (botón **🏆 Enviar puntuación**
+al terminar la partida) y el bot la guarda en `scores.json`.
+
+Los comandos clásicos (`/start`, `/play`, `/pagar`, `/help`) siguen existiendo como alias,
+pero la UX pensada es con botones.
 
 ## Cómo funcionan los pagos
 
@@ -57,4 +67,6 @@ Variables:
 ## Nota para producción
 
 - Deploy 24/7: `systemd`, `pm2` o un VPS. `node bot.js` es suficiente para empezar.
-- Para guardar compras/usuarios usa una base de datos (SQLite/Postgres).
+- Las compras (`purchases.json`) y las puntuaciones (`scores.json`) se guardan en disco
+  de forma atómica (`.tmp` + rename). Para muchos usuarios, migra a SQLite/Postgres.
+- Poner `DATA_DIR` a una carpeta de datos (p. ej. `/var/lib/misterio-bot`).

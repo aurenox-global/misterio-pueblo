@@ -51,8 +51,11 @@ en un **único archivo HTML** (HTML + CSS + JS vanilla, sin librerías ni recurs
 En la carpeta `telegram/` tienes un bot de ejemplo sin dependencias (`bot.js`) que:
 
 - Abre el juego como **Mini App** (botón Web App apuntando a la URL de GitHub Pages).
+- Interfaz **100% por botones** inline (menú: Jugar / Premium / Historial / Ranking / Ayuda).
 - Cobra con **Telegram Stars (XTR)** mediante `sendInvoice` + `pre_checkout_query`.
 - Ofrece un pago en **crypto (TON)** mediante enlace de monedero.
+- **Ranking online sin backend propio:** la Mini App envía la puntuación al bot (`sendData`).
+- Persiste compras y puntuaciones en JSON (`purchases.json`, `scores.json`).
 
 ```bash
 cd telegram
@@ -68,8 +71,8 @@ URL del juego. Ver `telegram/README.md` para el paso a paso.
    para abrir una puerta secreta).
 2. **Modo por semilla / New Game+** con fantasmas más agresivos, linterna mejorable y logros
    guardados en `localStorage`.
-3. **Cooperativo ligero + ranking online** (WebSocket/WebRTC): quién resuelve el misterio con
-   más cordura, integrable con la Mini App de Telegram.
+3. **Cooperativo ligero** (WebSocket/WebRTC): jugar varios jugadores en el mismo pueblo de
+   Valdemora. (El *ranking online* ya está integrado con la Mini App de Telegram ✅)
 
 ---
 

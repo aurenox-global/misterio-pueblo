@@ -1,0 +1,11 @@
+{
+  "name": "misterio-pueblo-pixel-ghosts",
+  "version": "1.0.0",
+  "description": "Mini juego de misterio en mundo abierto con fantasmas, pixel art, en un solo HTML. Incluye bot de Telegram con Stars/crypto.",
+  "private": true,
+  "scripts": {
+    "bot": "node telegram/bot.js",
+    "serve": "python3 -m http.server 8000"
+  },
+  "license": "MIT"
+}

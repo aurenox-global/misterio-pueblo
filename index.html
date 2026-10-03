@@ -1,0 +1,1234 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<meta name="theme-color" content="#05050a">
+<title>El Misterio del Pueblo — Pixel Ghosts</title>
+<style>
+  /* ===== ESTILOS: canvas pixelado, responsive, controles táctiles ===== */
+  html,body{margin:0;padding:0;height:100%;background:#05050a;overflow:hidden;
+    font-family:ui-monospace,'Courier New',monospace;color:#c9d4e8;
+    -webkit-tap-highlight-color:transparent;user-select:none}
+  #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
+  canvas#cv{image-rendering:pixelated;image-rendering:crisp-edges;
+    display:block;touch-action:none;background:#05050a;
+    box-shadow:0 0 0 2px #141428, 0 0 40px #000 inset}
+  /* Controles táctiles (solo se muestran en pantallas táctiles) */
+  #touch{position:fixed;inset:0;display:none;pointer-events:none;z-index:10}
+  #touch.on{display:block}
+  #stick{position:absolute;left:18px;bottom:18px;width:120px;height:120px;
+    border:2px solid rgba(91,127,168,.5);border-radius:50%;
+    background:rgba(10,10,18,.35);pointer-events:auto;touch-action:none}
+  #knob{position:absolute;left:38px;top:38px;width:44px;height:44px;border-radius:50%;
+    background:rgba(91,127,168,.55);border:2px solid rgba(224,224,232,.5)}
+  .btn{position:absolute;width:62px;height:62px;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:bold;
+    background:rgba(30,36,64,.75);border:2px solid rgba(91,127,168,.7);color:#e8d9a0;
+    pointer-events:auto;touch-action:none}
+  #btnE{right:104px;bottom:34px}#btnF{right:26px;bottom:96px}
+  #mute{position:fixed;top:6px;right:6px;z-index:11;font-size:14px;
+    background:rgba(10,10,18,.6);border:1px solid #2a3a5c;color:#8a6b9c;border-radius:4px;
+    padding:2px 6px;cursor:pointer;display:block}
+</style>
+</head>
+<body>
+<div id="wrap"><canvas id="cv" width="240" height="160"></canvas></div>
+<div id="touch">
+  <div id="stick"><div id="knob"></div></div>
+  <div class="btn" id="btnE">E</div>
+  <div class="btn" id="btnF">F</div>
+</div>
+<div id="mute" title="Silenciar">🔊</div>
+
+<script>
+/* ============================================================================
+   EL MISTERIO DEL PUEBLO — mini juego de misterio en mundo abierto, pixel art.
+   Un solo archivo. HTML + CSS + JS vanilla. Sin librerías ni recursos externos.
+   Secciones: CONFIG · PALETA · SPRITES · MAPA · INPUT · ENTIDADES ·
+              IA FANTASMAS · ILUMINACIÓN · AUDIO · UI · UPDATE · RENDER · MAIN
+   ============================================================================ */
+'use strict';
+
+/* ============================== CONFIG ==================================== */
+const W = 240, H = 160;         // resolución lógica del canvas
+const TS = 16;                  // tamaño de tile en px
+const MAPW = 100, MAPH = 100;   // mapa de 100x100 tiles
+const WORLD_W = MAPW * TS, WORLD_H = MAPH * TS;
+const SAVE_KEY = 'misterio_pueblo_v1';
+const TOTAL_CLUES = 5;
+
+// IDs de tile
+const T = {
+  GRASS:0, FOREST:1, PATH:2, WATER:3, CEM:4, PLAZA:5,
+  WALL:6, FLOOR:7, DOOR:8, DOOR_LOCK:9, DOOR_GOAL:10,
+  TREE:11, GRAVE:12, FENCE:13, BUSH:14, NOTE:15
+};
+
+/* ============================== PALETA ====================================
+   16 colores fríos y oscuros + acentos cálidos. Clave = carácter del sprite. */
+const PAL = {
+  'K':'#0a0a12', 'B':'#141428', 'N':'#1e2440', 'S':'#2a3a5c', 'U':'#3d5a80',
+  'L':'#5b7fa8', 'G':'#2b3a2a', 'H':'#3f5a3a', 'J':'#6b8f5a', 'P':'#4a3a5c',
+  'Q':'#6b4d7a', 'R':'#8a6b9c', 'Y':'#e8d9a0', 'O':'#d4a24a', 'E':'#b03a3a',
+  'W':'#e0e0e8'
+};
+
+/* ============================== SPRITES ===================================
+   Matrices de caracteres de 16x16. '.' o ' ' = transparente. */
+
+const SPR = {};
+SPR.playerDown = [
+"................",
+".....NNNNNN.....",
+"....NSSSSSSN....",
+"....NSSSSSSN....",
+"....NYYYYYYN....",
+"....NYKKYKYN....",
+"....NYYYYYYN....",
+".....NYYYYN.....",
+"....UUUUUUUU....",
+"...UUUUUUUUUU...",
+"...UUUUUUUUUU...",
+"...UUUUUUUUUU...",
+"...UUUUUUUUUU...",
+"....UUUUUUUU....",
+"....NN....NN....",
+"....NN....NN...."
+];
+SPR.playerDown2 = SPR.playerDown.slice(0,14).concat([
+"...NN.....NN....",
+"...NN.....NN...."
+]);
+SPR.playerUp = [
+"................",
+".....NNNNNN.....",
+"....NSSSSSSN....",
+"....NSSSSSSN....",
+"....NSSSSSSN....",
+"....NSSSSSSN....",
+"....NSSSSSSN....",
+".....NSSSSN.....",
+"....UUUUUUUU....",
+"...UUUUUUUUUU...",
+"...UUUUUUUUUU...",
+"...UUUUUUUUUU...",
+"...UUUUUUUUUU...",
+"....UUUUUUUU....",
+"....NN....NN....",
+"....NN....NN...."
+];
+SPR.playerUp2 = SPR.playerUp.slice(0,14).concat([
+"...NN.....NN....",
+"...NN.....NN...."
+]);
+SPR.playerRight = [
+"................",
+"....NNNNNN......",
+"...NSSSSSSN.....",
+"...NSSSSSSN.....",
+"...NYYYYYYN.....",
+"...NYKKYKYN.....",
+"...NYYYYYYN.....",
+"....NYYYYN......",
+"....UUUUUU......",
+"...UUUUUUUU.....",
+"...UUUUUUUU.....",
+"...UUUUUUUU.....",
+"...UUUUUUUU.....",
+"....UUUUUU......",
+"....NN..NN......",
+"....NN..NN......"
+];
+SPR.playerRight2 = SPR.playerRight.slice(0,14).concat([
+"...NN...NN......",
+"...NN...NN......"
+]);
+
+SPR.ghost = [
+"................",
+"................",
+".....WWWWWW.....",
+"...WWWWWWWWWW...",
+"..WWWWWWWWWWWW..",
+"..WWWWWWWWWWWW..",
+"..WWKKWWKKWWWW..",
+"..WWKKWWKKWWWW..",
+"..WWWWWWWWWWWW..",
+"..WWWWWWWWWWWW..",
+"..WWWWWWWWWWWW..",
+"..WWWWWWWWWWWW..",
+"..WWWWWWWWWWWW..",
+"..WWWWWWWWWWWW..",
+"..WW.WWWW.WWWW..",
+"...W..WW..WW...."
+];
+SPR.ghost2 = SPR.ghost.slice(0,14).concat([
+"...W.WWWW.WWW...",
+"..WW..WW..WW...."
+]);
+SPR.ghost3 = SPR.ghost.slice(0,14).concat([
+"..WWWW.WWWW.W...",
+".WW..WW..WW....."
+]);
+SPR.ghostFrames = [SPR.ghost, SPR.ghost2, SPR.ghost3];
+
+SPR.tree = [
+"......HHHH......",
+"....HHJJJJHH....",
+"...HJJJJJJJJH...",
+"..HJJJJJJJJJJH..",
+"..HJJJJJJJJJJH..",
+".HJJJJJJJJJJJJH.",
+".HJJJJJJJJJJJJH.",
+"..HJJJJJJJJJJH..",
+"...HJJJJJJJJH...",
+"....HHJJJJHH....",
+"......HHHH......",
+".......OO.......",
+".......OO.......",
+".......OO.......",
+"......GOOG......",
+"......GGGG......"
+];
+SPR.grave = [
+"................",
+"................",
+".....WWWWWW.....",
+"....WWWWWWWW....",
+"....WWWKKWWW....",
+"....WWWKKWWW....",
+"....WWKKKKWW....",
+"....WWWKKWWW....",
+"....WWWWWWWW....",
+"....WWWWWWWW....",
+"....WWWWWWWW....",
+"...SWWWWWWWWS...",
+"..SSSSSSSSSSSS..",
+".SSSSSSSSSSSSSS.",
+"SSSSSSSSSSSSSSSS",
+"SSSSSSSSSSSSSSSS"
+];
+SPR.bush = [
+"................",
+"................",
+"................",
+"................",
+"................",
+"................",
+"................",
+"................",
+"......HHHH......",
+"....HHJJJJHH....",
+"...HJJJJJJJJH...",
+"..HJJJJJJJJJJH..",
+"..HJJJJJJJJJJH..",
+"...HJJJJJJJJH...",
+"....GGGGGGGG....",
+"................"
+];
+// Ítems de pista (acento rojo 'E' = color de pistas)
+SPR.itemDiario = [
+"................",
+"................",
+"................",
+"....EEEEEEEE....",
+"...EEEEEEEEEE...",
+"...EEWWWWWWEE...",
+"...EEWKKKKWEE...",
+"...EEWWWWWWEE...",
+"...EEWKKKKWEE...",
+"...EEWWWWWWEE...",
+"...EEEEEEEEEE...",
+"....EEEEEEEE....",
+"................",
+"................",
+"................",
+"................"
+];
+SPR.itemLlave = [
+"................",
+"................",
+"................",
+"....OOOO........",
+"...OO..OO.......",
+"...OO..OO.......",
+"....OOOO........",
+"......OO........",
+"......OO........",
+"......OOOOO.....",
+"......OO........",
+"......OOO.......",
+"......OO........",
+"......OOO.......",
+"................",
+"................"
+];
+SPR.itemFoto = [
+"................",
+"................",
+"....WWWWWWWW....",
+"....WSSSSSSW....",
+"....WSSWWSSW....",
+"....WSSWWSSW....",
+"....WSSSSSSW....",
+"....WSSSSSSW....",
+"....WWWWWWWW....",
+"....WSSSSSSW....",
+"....WWWWWWWW....",
+"....WWWWWWWW....",
+"................",
+"................",
+"................",
+"................"
+];
+SPR.itemMedallon = [
+"................",
+"................",
+"....OOOOOO......",
+"...OO....OO.....",
+"..OO..EE..OO....",
+"..O..EEEE..O....",
+"..O..EEEE..O....",
+"..O...EE...O....",
+"..OO......OO....",
+"...OO....OO.....",
+"....OOOOOO......",
+"................",
+"................",
+"................",
+"................",
+"................"
+];
+SPR.itemCarta = [
+"................",
+"................",
+"................",
+"..WWWWWWWWWWWW..",
+"..WWWWWWWWWWWW..",
+"..WWWWWWWWWWWW..",
+"..WWWWWWWWWWWW..",
+"..WWWWWEEWWWWW..",
+"..WWWWWEEWWWWW..",
+"..WWWWWWWWWWWW..",
+"..WWWWWWWWWWWW..",
+"................",
+"................",
+"................",
+"................",
+"................"
+];
+SPR.battery = [
+"................",
+"................",
+"................",
+"................",
+"....OOOOOOOO....",
+"....OYYYYYYO....",
+"....OYKKKKYO....",
+"....OYKKKKYO....",
+"....OYYYYYYO....",
+"....OOOOOOOO....",
+"................",
+"................",
+"................",
+"................",
+"................",
+"................"
+];
+
+/* ============================== MAPA ======================================
+   Generado por código: bosque, cementerio, calles, lago y mansión. */
+let map = new Uint8Array(MAPW * MAPH);
+let disc = new Uint8Array(MAPW * MAPH);      // tiles descubiertos
+let unlocked = {};                            // puertas abiertas "x,y"
+let seed = 1337;
+let rngState = 0;
+
+function mulberry32(a){ return function(){ a|=0; a=a+0x6D2B79F5|0; let t=Math.imul(a^a>>>15,1|a); t=t+Math.imul(t^t>>>7,61|t)^t; return ((t^t>>>14)>>>0)/4294967296; }; }
+let rng = mulberry32(seed);
+function irand(n){ return Math.floor(rng()*n); }
+
+const IDX = (x,y)=> y*MAPW + x;
+function setT(x,y,t){ if(x<0||y<0||x>=MAPW||y>=MAPH) return; map[IDX(x,y)] = t; }
+function getT(x,y){ if(x<0||y<0||x>=MAPW||y>=MAPH) return T.TREE; return map[IDX(x,y)]; }
+function isSolidTile(t,x,y){
+  switch(t){
+    case T.WATER: case T.TREE: case T.GRAVE: case T.WALL: case T.FENCE: return true;
+    case T.DOOR_LOCK: return !unlocked[x+','+y];
+    case T.DOOR_GOAL: return true;
+    default: return false;
+  }
+}
+function solidAt(px,py){ return isSolidTile(getT(Math.floor(px/TS),Math.floor(py/TS)),Math.floor(px/TS),Math.floor(py/TS)); }
+
+// rectángulo de tiles
+function fillRectT(x,y,w,h,t){ for(let j=0;j<h;j++)for(let i=0;i<w;i++) setT(x+i,y+j,t); }
+// edificio: muros + suelo + puerta
+function building(x,y,w,h,doorTile,doorOff){
+  fillRectT(x,y,w,h,T.FLOOR);
+  for(let i=0;i<w;i++){ setT(x+i,y,T.WALL); setT(x+i,y+h-1,T.WALL); }
+  for(let j=0;j<h;j++){ setT(x,y+j,T.WALL); setT(x+w-1,y+j,T.WALL); }
+  const dx = x + (doorOff!=null?doorOff:(w>>1));
+  setT(dx, y+h-1, doorTile);
+}
+function carvePath(x0,y0,x1,y1,wide){
+  wide = wide||2;
+  let x=x0,y=y0;
+  while(x!==x1){ for(let k=0;k<wide;k++) if(map[IDX(x,y+k)]!==T.WATER) setT(x,y+k,T.PATH); x += Math.sign(x1-x); }
+  while(y!==y1){ for(let k=0;k<wide;k++) if(map[IDX(x+k,y)]!==T.WATER) setT(x+k,y,T.PATH); y += Math.sign(y1-y); }
+}
+
+let ITEMS = [];   //{x,y,name,spr,text,taken}
+let NOTES = {};   // "x,y" -> texto de nota
+let ghostSpawns = [];
+
+function genMap(sd){
+  seed = sd>>>0; rng = mulberry32(seed);
+  map.fill(T.GRASS); unlocked = {};
+  // bosque de fondo por todo el mapa
+  for(let y=0;y<MAPH;y++)for(let x=0;x<MAPW;x++) if(rng()<0.55) setT(x,y,T.FOREST);
+  // lago (elipse) al suroeste
+  const lx=20, ly=74, lrx=12, lry=9;
+  for(let y=ly-lry-1;y<=ly+lry+1;y++)for(let x=lx-lrx-1;x<=lx+lrx+1;x++){
+    const d=Math.hypot((x-lx)/lrx,(y-ly)/lry);
+    if(d<1) setT(x,y,T.WATER); else if(d<1.25) setT(x,y,T.PATH);
+  }
+  // plaza del pueblo (centro)
+  fillRectT(45,52,14,12,T.PLAZA);
+  // calles desde la plaza
+  carvePath(51,58,51,80,3);
+  carvePath(45,58,20,72,2);
+  carvePath(56,56,74,40,2);
+  carvePath(51,52,51,20,2);
+  carvePath(30,56,20,56,2);
+  // mansión central (arriba del pueblo)
+  building(43,34,15,13,T.DOOR_GOAL,7);
+  fillRectT(44,35,13,11,T.FLOOR);
+  setT(45,36,T.WALL); setT(55,36,T.WALL);    // columnas interiores
+  NOTES['50,46'] = 'La puerta principal de la mansión está cerrada. Necesitas las 5 pistas para resolver el misterio.';
+  // cementerio al noreste
+  fillRectT(66,22,20,18,T.CEM);
+  for(let y=23;y<39;y++)for(let x=67;x<85;x++){ if(rng()<0.16) setT(x,y,T.GRAVE); }
+  for(let i=0;i<20;i++) setT(66+i,22,T.FENCE);
+  for(let j=0;j<18;j++) setT(85,22+j,T.FENCE);
+  setT(75,39,T.DOOR); // puerta de entrada al cementerio
+  // casas del pueblo
+  building(28,44,7,6,T.DOOR,3);
+  NOTES['31,49'] = 'Nota: "Los vecinos oían susurros en el bosque. Nadie volvió a salir de noche."';
+  building(64,60,8,6,T.DOOR,4);
+  NOTES['68,65'] = 'Nota: "La llave del cementerio desapareció el mismo día que la niebla llegó."';
+  building(22,90,7,6,T.DOOR,3);
+  NOTES['25,95'] = 'Nota: "El medallón era de la familia Moreau. Nunca lo encontramos."';
+  building(60,86,7,6,T.DOOR_LOCK,3);
+  NOTES['63,91'] = 'Nota: "Casa del guarda. Cerrada con llave. Guarda algo importante."';
+  // árboles dispersos (solidos) alrededor de zonas abiertas
+  for(let i=0;i<900;i++){ const x=irand(MAPW), y=irand(MAPH); const t=getT(x,y);
+    if(t===T.FOREST||t===T.GRASS) setT(x,y,T.TREE); }
+  // arbustos decorativos
+  for(let i=0;i<120;i++){ const x=irand(MAPW), y=irand(MAPH); if(getT(x,y)===T.FOREST) setT(x,y,T.BUSH); }
+
+  // ---- PISTAS ----
+  ITEMS = [];
+  const clue = (x,y,name,spr,text)=>{
+    for(let j=-1;j<=1;j++)for(let i=-1;i<=1;i++){ const t=getT(x+i,y+j);
+      if(t===T.TREE||t===T.GRAVE||t===T.WALL||t===T.WATER) setT(x+i,y+j,T.PATH); }
+    ITEMS.push({ x:x*TS+8, y:y*TS+8, name:name, spr:spr, text:text, taken:false, guard:null, clue:true });
+  };
+  clue(30,47,'Diario', SPR.itemDiario,'Diario: "El pozo del bosque susurra. Algo salió del lago hace tres noches."');
+  clue(78,30,'Llave', SPR.itemLlave,'Llave oxidada: abre la casa cerrada del guarda. También abre el cementerio.');
+  clue(16,74,'Foto', SPR.itemFoto,'Foto antigua: una familia frente a la mansión. Todos tienen los ojos velados.');
+  clue(67,63,'Medallón', SPR.itemMedallon,'Medallón: símbolo de la familia Moreau, primeros dueños de la mansión.');
+  clue(50,20,'Carta', SPR.itemCarta,'Carta: "Si lees esto, corre. El pueblo ya no es del mundo de los vivos."');
+
+  // ---- PILAS ----
+  const bat = [[40,70],[70,50],[25,40],[80,80],[50,66],[64,26]];
+  for(const p of bat){
+    for(let j=-1;j<=1;j++)for(let i=-1;i<=1;i++) if(getT(p[0]+i,p[1]+j)===T.TREE) setT(p[0]+i,p[1]+j,T.PATH);
+    ITEMS.push({ x:p[0]*TS+8, y:p[1]*TS+8, spr:SPR.battery, taken:false, battery:true });
+  }
+
+  // ---- FANTASMAS ----
+  ghostSpawns = [
+    {x:50,y:30,t:'guardian',item:4},   // guarda la Carta
+    {x:78,y:30,t:'guardian',item:1},   // guarda la Llave
+    {x:16,y:74,t:'guardian',item:2},   // guarda la Foto
+    {x:38,y:70,t:'errante'}, {x:66,y:46,t:'errante'}, {x:24,y:58,t:'errante'},
+    {x:56,y:92,t:'timido'}, {x:80,y:70,t:'timido'}, {x:44,y:64,t:'timido'}
+  ];
+  return { spawnX:51*TS+8, spawnY:66*TS+8 };
+}
+
+function tileMiniColor(t){
+  switch(t){
+    case T.WATER: return '#22406a'; case T.PATH: return '#4a4030';
+    case T.PLAZA: return '#3a4058'; case T.CEM: return '#2a2a3e';
+    case T.WALL: return '#5b7fa8'; case T.FLOOR: return '#6b4d7a';
+    case T.DOOR: case T.DOOR_LOCK: return '#d4a24a'; case T.DOOR_GOAL: return '#b03a3a';
+    case T.TREE: return '#2b3a2a'; case T.GRAVE: return '#c9c9d8';
+    case T.FENCE: return '#6b4d7a'; case T.BUSH: return '#3f5a3a';
+    case T.FOREST: return '#20341f'; default: return '#26301f';
+  }
+}
+
+/* ============================== ESTADO ==================================== */
+const player = { x:0,y:0,dir:'down',frame:0,animT:0, sanity:100, battery:100, flash:true, stepT:0 };
+let ghosts = [];
+let cam = { x:0, y:0 };
+let state = 'title';                 // title | play | over | final
+let time = 0;
+let collected = 0;
+let shake = 0, hurtFlash = 0;
+let nearItem = null, nearInter = null;
+let hintText = '', hintT = 0;
+let spawnPoint = {x:0,y:0};
+
+/* ============================== INPUT ===================================== */
+const keys = {}; const just = {};
+const KEYMAP = {
+  ArrowUp:'up', KeyW:'up', ArrowDown:'down', KeyS:'down',
+  ArrowLeft:'left', KeyA:'left', ArrowRight:'right', KeyD:'right'
+};
+addEventListener('keydown', e=>{
+  if(!keys[e.code]) just[e.code]=true; keys[e.code]=true;
+  if(['ArrowUp','ArrowDown','ArrowLeft','ArrowRight','Space'].includes(e.code)) e.preventDefault();
+  initAudio(); if(state==='title' && (e.code==='Enter'||e.code==='Space')) startGame(false);
+  if(state==='over' && (e.code==='Enter'||e.code==='Space')){ startGame(true); }
+  if(state==='final' && (e.code==='Enter'||e.code==='Space')){ state='title'; }
+});
+addEventListener('keyup', e=>{ keys[e.code]=false; });
+
+// Input táctil
+let touchDir = {x:0,y:0};
+function setupTouch(){
+  const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints>0;
+  if(!isTouch) return;
+  document.getElementById('touch').classList.add('on');
+  document.getElementById('mute').classList.add('on');
+  const stick = document.getElementById('stick'), knob = document.getElementById('knob');
+  let id=null, cx=0, cy=0, R=44;
+  const start = e=>{ const t=e.changedTouches[0]; id=t.identifier; const r=stick.getBoundingClientRect(); cx=r.left+r.width/2; cy=r.top+r.height/2; move(e); e.preventDefault(); };
+  const move = e=>{ for(const t of e.changedTouches){ if(t.identifier!==id) continue;
+      let dx=t.clientX-cx, dy=t.clientY-cy; const d=Math.hypot(dx,dy)||1; const cl=Math.min(d,R);
+      dx=dx/d*cl; dy=dy/d*cl; knob.style.left=(38+dx)+'px'; knob.style.top=(38+dy)+'px';
+      touchDir.x = Math.abs(dx)<8?0:Math.sign(dx); touchDir.y = Math.abs(dy)<8?0:Math.sign(dy);
+      if(Math.abs(dx)>=8 && Math.abs(dy)<8) touchDir.y=0; if(Math.abs(dy)>=8 && Math.abs(dx)<8) touchDir.x=0;
+    } e.preventDefault(); };
+  const end = e=>{ for(const t of e.changedTouches) if(t.identifier===id){ id=null; touchDir.x=0; touchDir.y=0;
+      knob.style.left='38px'; knob.style.top='38px'; } };
+  stick.addEventListener('touchstart',start,{passive:false});
+  stick.addEventListener('touchmove',move,{passive:false});
+  stick.addEventListener('touchend',end); stick.addEventListener('touchcancel',end);
+  const tap=(el,code)=>{ el.addEventListener('touchstart',e=>{ just[code]=true; initAudio(); e.preventDefault(); },{passive:false}); };
+  tap(document.getElementById('btnE'),'KeyE');
+  tap(document.getElementById('btnF'),'KeyF');
+  // toque en el canvas para avanzar pantallas / diálogos
+  const cv = document.getElementById('cv');
+  cv.addEventListener('touchstart', e=>{ initAudio();
+    if(state==='title') startGame(false);
+    else if(state==='over') startGame(true);
+    else if(state==='final') state='title';
+    else { just['KeyE']=true; }
+    e.preventDefault();
+  },{passive:false});
+}
+
+/* ============================== AUDIO ===================================== */
+let actx=null, master=null, windGain=null, whisperGain=null, windLfo=null, muted=false;
+function noiseBuf(){
+  const b=actx.createBuffer(1, actx.sampleRate*2, actx.sampleRate);
+  const d=b.getChannelData(0); for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1; return b;
+}
+function initAudio(){
+  if(actx) return;
+  try{
+    actx = new (window.AudioContext||window.webkitAudioContext)();
+    master = actx.createGain(); master.gain.value = muted?0:0.9; master.connect(actx.destination);
+    // Viento ambiental: ruido -> lowpass -> gain
+    const src = actx.createBufferSource(); src.buffer = noiseBuf(); src.loop = true;
+    const lp = actx.createBiquadFilter(); lp.type='lowpass'; lp.frequency.value=380; lp.Q.value=0.7;
+    windGain = actx.createGain(); windGain.gain.value=0.045;
+    src.connect(lp).connect(windGain).connect(master); src.start();
+    windLfo = actx.createOscillator(); windLfo.frequency.value=0.08;
+    const lg = actx.createGain(); lg.gain.value=0.02; windLfo.connect(lg).connect(windGain.gain); windLfo.start();
+    // Susurro: ruido -> bandpass -> gain (sube con fantasmas cerca)
+    const ws = actx.createBufferSource(); ws.buffer = noiseBuf(); ws.loop=true;
+    const bp = actx.createBiquadFilter(); bp.type='bandpass'; bp.frequency.value=900; bp.Q.value=1.2;
+    whisperGain = actx.createGain(); whisperGain.gain.value=0;
+    ws.connect(bp).connect(whisperGain).connect(master); ws.start();
+    document.getElementById('mute').classList.add('on');
+  }catch(e){ /* audio no disponible */ }
+}
+function setMuted(m){ muted=m; if(master) master.gain.value=m?0:0.9; document.getElementById('mute').textContent=m?'🔇':'🔊'; }
+function stepSound(){
+  if(!actx) return;
+  const s=actx.createBufferSource(); s.buffer=noiseBuf();
+  const f=actx.createBiquadFilter(); f.type='lowpass'; f.frequency.value=650;
+  const g=actx.createGain(); g.gain.setValueAtTime(0.10, actx.currentTime);
+  g.gain.exponentialRampToValueAtTime(0.001, actx.currentTime+0.09);
+  s.connect(f).connect(g).connect(master); s.start(); s.stop(actx.currentTime+0.1);
+}
+function tone(freqs){
+  if(!actx) return;
+  let t=actx.currentTime;
+  for(const fr of freqs){
+    const o=actx.createOscillator(); o.type='square'; o.frequency.value=fr;
+    const g=actx.createGain(); g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.18,t+0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001,t+0.16);
+    o.connect(g).connect(master); o.start(t); o.stop(t+0.17); t+=0.13;
+  }
+}
+document.getElementById('mute').addEventListener('click', ()=> togglemute());
+document.getElementById('mute').addEventListener('touchstart', e=>{ togglemute(); e.preventDefault(); },{passive:false});
+function togglemute(){ setMuted(!muted); }
+
+/* ============================== UI / DIÁLOGO ============================== */
+let dialog = { active:false, lines:[], i:0, t:0 };
+function say(lines){ if(typeof lines==='string') lines=[lines];
+  dialog.active=true; dialog.lines=lines; dialog.i=0; dialog.t=0; }
+function showHint(t){ hintText=t; hintT=2.0; }
+
+// envuelve texto a un ancho (canvas 8px monospace)
+function wrapText(txt, maxW){
+  const words = txt.split(' '); const lines=[]; let cur='';
+  for(const w of words){
+    const test = cur? cur+' '+w : w;
+    if(ctx.measureText(test).width > maxW && cur){ lines.push(cur); cur=w; }
+    else cur=test;
+  }
+  if(cur) lines.push(cur);
+  return lines;
+}
+
+/* ============================== GUARDADO ================================== */
+function save(){
+  try{
+    const data = {
+      seed, x:player.x, y:player.y, sanity:player.sanity, battery:player.battery, flash:player.flash,
+      collected,
+      items: ITEMS.map(it=> it.taken?1:0),
+      disc: Array.from(disc).join(''),
+      unlocked: Object.keys(unlocked)
+    };
+    localStorage.setItem(SAVE_KEY, JSON.stringify(data));
+  }catch(e){}
+}
+function load(){
+  try{
+    const raw = localStorage.getItem(SAVE_KEY); if(!raw) return null;
+    return JSON.parse(raw);
+  }catch(e){ return null; }
+}
+function clearSave(){ try{ localStorage.removeItem(SAVE_KEY); }catch(e){} }
+
+/* ============================== ENTIDADES / SPAWN ========================= */
+function buildGhosts(){
+  ghosts = [];
+  for(const g of ghostSpawns){
+    let guardItem = null;
+    if(g.t==='guardian' && g.item!=null) guardItem = ITEMS.find(it=> it.clue && it.name===['Diario','Llave','Foto','Medallón','Carta'][g.item]);
+    ghosts.push({
+      x:g.x*TS+8, y:g.y*TS+8, type:g.t, home:{x:g.x*TS+8,y:g.y*TS+8},
+      vx:0, vy:0, t:rng()*3, alive:true, item:guardItem, wanderT:0, dir:irand(4)
+    });
+    if(guardItem) guardItem.guard = ghosts[ghosts.length-1];
+  }
+}
+
+/* ============================== IA FANTASMAS =============================== */
+function ghostLit(g){
+  const d = Math.hypot(g.x-player.x, g.y-player.y);
+  return player.flash && player.battery>0 && d < lightRadius();
+}
+function moveGhost(g, dx, dy){
+  const nx = g.x + dx, ny = g.y + dy;
+  if(!solidAt(nx, g.y)) g.x = nx;
+  if(!solidAt(g.x, ny)) g.y = ny;
+  g.x = Math.max(8, Math.min(WORLD_W-8, g.x));
+  g.y = Math.max(8, Math.min(WORLD_H-8, g.y));
+}
+function updateGhosts(dt){
+  const amb = 1 + collected*0.25;   // más rápidos según pistas
+  for(const g of ghosts){
+    if(!g.alive) continue;
+    g.t += dt; g.wanderT -= dt;
+    const dx = player.x-g.x, dy = player.y-g.y; const dist = Math.hypot(dx,dy)||1;
+    const lit = ghostLit(g);
+    let spd = 0;
+    if(g.type==='errante'){
+      if(dist < 110){ spd = 24*amb; moveGhost(g, dx/dist*spd*dt, dy/dist*spd*dt); }
+      else { spd = 13; if(g.wanderT<=0){ g.dir=irand(4); g.wanderT=1+rng()*1.5; }
+        const v=[[0,-1],[0,1],[-1,0],[1,0]][g.dir]; moveGhost(g, v[0]*spd*dt, v[1]*spd*dt); }
+    } else if(g.type==='timido'){
+      if(lit){ /* congelado bajo la luz */ }
+      else {
+        if(dist < 150){ spd=18*amb; moveGhost(g, dx/dist*spd*dt, dy/dist*spd*dt); }
+        else { spd=10; if(g.wanderT<=0){ g.dir=irand(4); g.wanderT=1.2+rng()*1.6; }
+          const v=[[0,-1],[0,1],[-1,0],[1,0]][g.dir]; moveGhost(g, v[0]*spd*dt, v[1]*spd*dt); }
+      }
+    } else { // guardian
+      // orbita su hogar; se oculta si su pista ya fue recogida
+      if(g.item && g.item.taken){ g.alive=false; continue; }
+      const hx = g.home.x-g.x, hy = g.home.y-g.y;
+      if(Math.hypot(hx,hy) > 40){ moveGhost(g, hx*dt, hy*dt); }
+      else { if(g.wanderT<=0){ g.dir=irand(4); g.wanderT=0.8+rng(); }
+        const v=[[0,-1],[0,1],[-1,0],[1,0]][g.dir]; moveGhost(g, v[0]*8*dt, v[1]*8*dt); }
+      if(dist < 70){ moveGhost(g, dx/dist*20*dt, dy/dist*20*dt); }
+    }
+    // contacto con el jugador -> pierde cordura + empujón
+    if(dist < 13){
+      player.sanity -= (lit?7:14)*dt;
+      g._touch = 0.4;
+      const kb = 30*dt; player.x -= dx/dist*kb; player.y -= dy/dist*kb;
+      shake = Math.max(shake, 3); hurtFlash = Math.max(hurtFlash, 0.5);
+    }
+    // susurro cercano
+    const prox = Math.max(0, 1 - dist/140);
+    g._prox = lit ? prox*0.35 : prox;
+  }
+}
+
+/* ============================== ILUMINACIÓN =============================== */
+function lightRadius(){
+  const flick = 1 + Math.sin(time*11)*0.03 + Math.sin(time*23.7)*0.02;
+  const base = 34 + collected*1.2;   // un poco más amplia con progreso
+  return (base * flick) * (player.flash?1:0.42);
+}
+
+/* ============================== UPDATE ==================================== */
+function aabbFree(cx,cy,r){
+  return !solidAt(cx-r,cy-r) && !solidAt(cx+r,cy-r) && !solidAt(cx-r,cy+r) && !solidAt(cx+r,cy+r);
+}
+function update(dt){
+  time += dt;
+  // toggle linterna
+  if(just['KeyF']){ player.flash = !player.flash; tone([520]); }
+  // avanzar diálogo
+  if(dialog.active){
+    if(just['KeyE']){
+      const full = dialog.lines[dialog.i]||'';
+      if(dialog.t*33 < full.length){ dialog.t = full.length/33 + 1; }  // completar de golpe
+      else { dialog.i++; dialog.t=0; if(dialog.i>=dialog.lines.length) dialog.active=false; }
+    }
+    dialog.t += dt;
+    // actualizar fantasmas igualmente (mundo vivo)
+    updateGhosts(dt); updateItems(); updateBattery(dt); updateCamera(dt);
+    justClear(); return;
+  }
+  // movimiento
+  let dx=0, dy=0;
+  for(const k in KEYMAP){ if(keys[k]){ const d=KEYMAP[k]; if(d==='up')dy-=1; if(d==='down')dy+=1; if(d==='left')dx-=1; if(d==='right')dx+=1; } }
+  dx += touchDir.x; dy += touchDir.y;
+  const mag = Math.hypot(dx,dy);
+  const moving = mag>0.1;
+  if(moving){
+    dx/=mag; dy/=mag;
+    const spd = 46;
+    const r = 6;
+    if(aabbFree(player.x+dx*spd*dt, player.y, r)) player.x += dx*spd*dt;
+    if(aabbFree(player.x, player.y+dy*spd*dt, r)) player.y += dy*spd*dt;
+    player.x = Math.max(8, Math.min(WORLD_W-8, player.x));
+    player.y = Math.max(8, Math.min(WORLD_H-8, player.y));
+    if(Math.abs(dx)>Math.abs(dy)) player.dir = dx>0?'right':'left';
+    else player.dir = dy>0?'down':'up';
+    player.animT += dt; if(player.animT>0.22){ player.animT=0; player.frame^=1; }
+    player.stepT -= dt; if(player.stepT<=0){ player.stepT=0.38; stepSound(); }
+  } else { player.frame = 0; }
+  // interacción
+  updateItems();
+  handleInteract();
+  updateBattery(dt);
+  updateGhosts(dt);
+  updateCamera(dt);
+  // cordura: regenera ligeramente si ningún fantasma cerca
+  let anyNear=false; for(const g of ghosts) if(g.alive && Math.hypot(g.x-player.x,g.y-player.y)<80) anyNear=true;
+  player.sanity = Math.min(100, player.sanity);
+  if(player.sanity<=0){ gameOver(); justClear(); return; }
+  if(!anyNear && player.sanity>0) player.sanity = Math.min(100, player.sanity + 1.2*dt);
+  // audio susurro
+  if(whisperGain){ let m=0; for(const g of ghosts) if(g.alive) m=Math.max(m, g._prox||0);
+    whisperGain.gain.value = m*0.09; }
+  if(shake>0) shake=Math.max(0, shake-dt*10);
+  if(hurtFlash>0) hurtFlash=Math.max(0, hurtFlash-dt*2);
+  if(hintT>0) hintT-=dt;
+  // descubrir minimapa
+  discoverAround();
+  justClear();
+}
+function justClear(){ for(const k in just) just[k]=false; }
+
+function updateItems(){
+  nearItem = null;
+  for(const it of ITEMS){
+    if(it.taken) continue;
+    if(Math.hypot(it.x-player.x, it.y-player.y) < 14){ nearItem = it; break; }
+  }
+}
+function updateBattery(dt){
+  if(player.flash && player.battery>0){ player.battery -= 1.6*dt; if(player.battery<=0){ player.battery=0; player.flash=false; tone([300,220]); showHint('Batería agotada'); } }
+}
+function updateCamera(dt){
+  const tx = player.x - W/2, ty = player.y - H/2;
+  const cl = 0.12 + dt*8;
+  cam.x += (tx-cam.x)*Math.min(1, cl);
+  cam.y += (ty-cam.y)*Math.min(1, cl);
+  cam.x = Math.max(0, Math.min(WORLD_W-W, cam.x));
+  cam.y = Math.max(0, Math.min(WORLD_H-H, cam.y));
+}
+function discoverAround(){
+  const ctx0 = Math.floor(player.x/TS), cty = Math.floor(player.y/TS), R=6;
+  for(let y=cty-R;y<=cty+R;y++)for(let x=ctx0-R;x<=ctx0+R;x++){
+    if(x<0||y<0||x>=MAPW||y>=MAPH) continue;
+    const i=IDX(x,y); if(disc[i]) continue; disc[i]=1;
+    mctx.fillStyle = tileMiniColor(map[i]); mctx.fillRect(x,y,1,1);
+  }
+}
+
+/* ---- Interacción con E ---- */
+function handleInteract(){
+  nearInter = null;
+  // puertas / notas adyacentes
+  const cx = Math.floor(player.x/TS), cy = Math.floor(player.y/TS);
+  const adj = [[cx,cy-1],[cx,cy+1],[cx-1,cy],[cx+1,cy],[cx,cy-1],[cx,cy]];
+  for(const [x,y] of adj){
+    const t=getT(x,y);
+    if(t===T.DOOR_LOCK && !unlocked[x+','+y]) nearInter={kind:'lock',x,y,label:'Abrir con llave (E)'};
+    else if(t===T.DOOR_GOAL) nearInter={kind:'goal',x,y,label:'Entrar a la mansión (E)'};
+    else if(t===T.DOOR) nearInter={kind:'door',x,y,t:getT(x,y)};
+    else if(t===T.NOTE) nearInter={kind:'note',x,y};
+  }
+  // prioridad: objeto sobre puerta
+  if(nearItem) nearInter = { kind:'item', item:nearItem, label:(nearItem.battery?'Recoger pila (E)':'Recoger '+(nearItem.name||'objeto')+' (E)') };
+  if(!nearInter) return;
+  if(just['KeyE']) interact(nearInter);
+}
+function interact(n){
+  if(n.kind==='item'){
+    const it = n.item; it.taken=true;
+    if(it.battery){ player.battery = Math.min(100, player.battery+35); tone([660]); showHint('+35% batería'); }
+    else {
+      collected++; tone([880,1320]);
+      const guardianMsg = it.guard && it.guard.alive ? ['Un guardián se desvanece entre la niebla...'] : [];
+      say([it.text].concat(guardianMsg, collected<TOTAL_CLUES ?
+        ['Pistas: '+collected+'/5. Sigue buscando por el pueblo.'] :
+        ['¡Tienes las 5 pistas! Ve a la mansión central y abre su puerta.']));
+      if(it.guard) it.guard.alive=false;
+    }
+    save();
+  } else if(n.kind==='lock'){
+    const hasKey = ITEMS.some(it=> it.name==='Llave' && it.taken);
+    if(hasKey){ unlocked[n.x+','+n.y]=1; tone([700,900]); showHint('Puerta abierta'); say('Usas la llave oxidada. La puerta cede con un chirrido.'); save(); }
+    else say('Cerrada con llave. Necesitas la llave del guarda.');
+  } else if(n.kind==='door'){
+    let note='';
+    // buscar nota cercana predefinida
+    for(const key in NOTES){ const [nx,ny]=key.split(',').map(Number);
+      if(Math.abs(nx-n.x)<=3 && Math.abs(ny-n.y)<=3){ note=NOTES[key]; break; } }
+    say(note || 'La puerta chirría. Dentro no hay nadie, solo polvo y silencio.');
+  } else if(n.kind==='note'){ say(NOTES[n.x+','+n.y] || 'Un papel ilegible.'); }
+  else if(n.kind==='goal'){
+    if(collected>=TOTAL_CLUES){
+      say([
+        'Con las 5 pistas reúnes el valor para abrir la mansión...',
+        'Dentro, un espejo cubierto de polvo refleja a los desaparecidos del pueblo.',
+        'El diario, la llave, la foto, el medallón y la carta encajan: la niebla nació del pozo.',
+        'Al romper el medallón, la niebla se disipa. El pueblo descansa por fin.'
+      ]);
+      state='final'; clearSave();
+    } else {
+      say('La puerta de la mansión está sellada por la niebla. Te faltan pistas ('+collected+'/5).');
+    }
+  }
+}
+function gameOver(){
+  if(state!=='play') return;
+  state='over'; clearSave();
+  if(master){ master.gain.value=0; }
+}
+
+/* ============================== RENDER ==================================== */
+const cv = document.getElementById('cv'); const ctx = cv.getContext('2d');
+ctx.imageSmoothingEnabled = false;
+const mini = document.createElement('canvas'); mini.width=MAPW; mini.height=MAPH;
+const mctx = mini.getContext('2d'); mctx.imageSmoothingEnabled=false;
+
+function drawSprite(spr, x, y, alpha, flip, tint){
+  ctx.globalAlpha = alpha==null?1:alpha;
+  for(let r=0;r<16;r++){
+    const row = spr[r]; if(!row) continue;
+    for(let c=0;c<16;c++){
+      const ch = row[flip?15-c:c]; if(!ch || ch==='.' || ch===' ') continue;
+      ctx.fillStyle = tint || PAL[ch]; if(!ctx.fillStyle) continue;
+      ctx.fillRect((x+c)|0, (y+r)|0, 1, 1);
+    }
+  }
+  ctx.globalAlpha = 1;
+}
+
+function hash(x,y){ let h=x*374761393+y*668265263; h=(h^(h>>13))*1274126177; return ((h^(h>>16))>>>0)/4294967296; }
+
+function drawTile(t,x,y,px,py){
+  switch(t){
+    case T.GRASS:
+    case T.FOREST: {
+      const base = t===T.FOREST? '#20341f' : '#26301f';
+      ctx.fillStyle=base; ctx.fillRect(px,py,16,16);
+      const n = hash(x,y); ctx.fillStyle = t===T.FOREST? '#2b3a2a':'#324028';
+      ctx.fillRect(px+((n*13)|0), py+((n*29)%13|0), 2,2);
+      if(n>0.5) ctx.fillRect(px+((n*7)%14|0), py+((n*17)%14|0), 2,2);
+      break; }
+    case T.PATH: {
+      ctx.fillStyle='#2b2a24'; ctx.fillRect(px,py,16,16);
+      ctx.fillStyle='#3a382e'; const n=hash(x,y);
+      ctx.fillRect(px+((n*12)|0),py+((n*20)%12|0),3,2);
+      if(n<0.4) ctx.fillRect(px+((n*90)%12|0),py+((n*70)%12|0),3,2);
+      break; }
+    case T.PLAZA: {
+      ctx.fillStyle='#2a3044'; ctx.fillRect(px,py,16,16);
+      ctx.fillStyle='#3a4058'; ctx.fillRect(px,py,16,1); ctx.fillRect(px,py,1,16);
+      ctx.fillRect(px+8,py+8,1,8); break; }
+    case T.CEM: {
+      ctx.fillStyle='#232336'; ctx.fillRect(px,py,16,16);
+      ctx.fillStyle='#2e2e44'; const n=hash(x,y); ctx.fillRect(px+((n*12)|0),py+((n*15)%12|0),2,2); break; }
+    case T.WATER: {
+      const s=Math.sin(time*1.6 + x*0.7 + y*0.9);
+      ctx.fillStyle='#122a4a'; ctx.fillRect(px,py,16,16);
+      ctx.fillStyle= s>0? '#1c3f6a':'#16365c';
+      ctx.fillRect(px, py+6+((s*2)|0), 16,2);
+      ctx.fillRect(px+2, py+11+((Math.sin(time*2+x)|0)), 10,1);
+      break; }
+    case T.WALL: {
+      ctx.fillStyle='#3d4a63'; ctx.fillRect(px,py,16,16);
+      ctx.fillStyle='#2a3448';
+      ctx.fillRect(px,py+7,16,1); ctx.fillRect(px,py+15,16,1);
+      ctx.fillRect(px+7,py,1,7); ctx.fillRect(px+3,py+8,1,7); ctx.fillRect(px+11,py+8,1,7);
+      ctx.fillStyle='#4a5a78'; ctx.fillRect(px,py,16,1);
+      break; }
+    case T.FLOOR: {
+      ctx.fillStyle='#3a3048'; ctx.fillRect(px,py,16,16);
+      ctx.fillStyle='#463a58'; ctx.fillRect(px,py,16,1); ctx.fillRect(px,py+8,16,1);
+      ctx.fillStyle='#2e2740'; ctx.fillRect(px+ (x%2?2:10),py,1,16);
+      break; }
+    case T.DOOR: {
+      ctx.fillStyle='#4a4030'; ctx.fillRect(px,py,16,16);
+      ctx.fillStyle='#6b4d2a'; ctx.fillRect(px+2,py+2,12,14);
+      ctx.fillStyle='#d4a24a'; ctx.fillRect(px+11,py+8,2,2); break; }
+    case T.DOOR_LOCK: {
+      ctx.fillStyle='#4a4030'; ctx.fillRect(px,py,16,16);
+      ctx.fillStyle='#5a3f28'; ctx.fillRect(px+2,py+2,12,14);
+      ctx.fillStyle='#d4a24a'; ctx.fillRect(px+7,py+7,2,4); break; }
+    case T.DOOR_GOAL: {
+      ctx.fillStyle='#2a2418'; ctx.fillRect(px,py,16,16);
+      ctx.fillStyle='#3a2a5c'; ctx.fillRect(px+1,py,14,16);
+      ctx.fillStyle='#b03a3a'; ctx.fillRect(px+6,py,1,16);
+      ctx.fillStyle='#d4a24a'; ctx.fillRect(px+3,py+7,2,2); ctx.fillRect(px+11,py+7,2,2); break; }
+    case T.FENCE: {
+      ctx.fillStyle='#2b3a2a'; ctx.fillRect(px,py,16,16);
+      ctx.fillStyle='#6b4d7a'; ctx.fillRect(px,py+5,16,2); ctx.fillRect(px,py+11,16,2);
+      ctx.fillRect(px+3,py+3,2,11); ctx.fillRect(px+11,py+3,2,11); break; }
+    case T.TREE: {
+      ctx.fillStyle='#20341f'; ctx.fillRect(px,py,16,16);
+      drawSprite(SPR.tree, px, py, 1, false); break; }
+    case T.GRAVE: {
+      ctx.fillStyle='#232336'; ctx.fillRect(px,py,16,16);
+      drawSprite(SPR.grave, px, py, 1, false); break; }
+    case T.BUSH: {
+      ctx.fillStyle='#20341f'; ctx.fillRect(px,py,16,16);
+      drawSprite(SPR.bush, px, py, 1, false); break; }
+    default: { ctx.fillStyle='#26301f'; ctx.fillRect(px,py,16,16); }
+  }
+}
+
+function render(){
+  ctx.fillStyle='#05050a'; ctx.fillRect(0,0,W,H);
+  ctx.save();
+  if(shake>0.2){ ctx.translate((Math.random()*2-1)*shake, (Math.random()*2-1)*shake); }
+
+  const sx = cam.x|0, sy = cam.y|0;
+  const x0 = Math.floor(sx/TS), y0 = Math.floor(sy/TS);
+  const x1 = Math.min(MAPW-1, x0 + (W/TS|0) + 1), y1 = Math.min(MAPH-1, y0 + (H/TS|0) + 1);
+  for(let y=y0;y<=y1;y++)for(let x=x0;x<=x1;x++){
+    drawTile(map[IDX(x,y)], x, y, x*TS - sx, y*TS - sy);
+  }
+  // ítems
+  for(const it of ITEMS){ if(it.taken) continue;
+    const bob = Math.sin(time*3 + it.x)*1.2;
+    drawSprite(it.spr, it.x-8-sx, it.y-8-sy+bob, 1, false);
+    if(!it.battery){ ctx.fillStyle='rgba(176,58,58,0.10)'; ctx.fillRect(it.x-9-sx,it.y-9-sy+bob,18,18); }
+  }
+  // fantasmas + jugador ordenados por Y
+  const drawables = [];
+  for(const g of ghosts){ if(g.alive) drawables.push({y:g.y,draw:()=>{
+    const f = SPR.ghostFrames[(Math.floor(g.t*4)%3)];
+    const bob = Math.sin(g.t*2)*2;
+    const lit = ghostLit(g);
+    drawSprite(f, g.x-8-sx, g.y-8-sy+bob, lit?0.35:0.62, false, lit?PAL.L:null);
+  }}); }
+  drawables.push({y:player.y, draw:()=>drawPlayer(sx,sy)});
+  drawables.sort((a,b)=>a.y-b.y);
+  for(const d of drawables) d.draw();
+
+  ctx.restore();
+
+  // niebla
+  drawFog(sx,sy);
+  // iluminación (oscuridad + linterna)
+  drawLight(sx,sy);
+  // HUD
+  drawHUD();
+  // overlays de pantalla
+  if(state==='title') drawTitle();
+  if(state==='over') drawOver();
+  if(state==='final') drawFinal();
+  if(dialog.active) drawDialog();
+}
+
+function drawPlayer(sx,sy){
+  let spr;
+  if(player.dir==='down') spr = player.frame? SPR.playerDown2:SPR.playerDown;
+  else if(player.dir==='up') spr = player.frame? SPR.playerUp2:SPR.playerUp;
+  else spr = player.frame? SPR.playerRight2:SPR.playerRight;
+  drawSprite(spr, player.x-8-sx, player.y-8-sy, 1, player.dir==='left');
+  // resplandor de linterna
+  if(player.flash && player.battery>0){
+    const g = ctx.createRadialGradient(player.x-sx,player.y-sy,1, player.x-sx,player.y-sy, 20);
+    g.addColorStop(0,'rgba(232,217,160,0.20)'); g.addColorStop(1,'rgba(232,217,160,0)');
+    ctx.fillStyle=g; ctx.fillRect(player.x-22-sx, player.y-22-sy, 44,44);
+  }
+}
+
+function drawFog(sx,sy){
+  const inten = 0.10 + collected*0.05;
+  ctx.save();
+  for(let l=0;l<2;l++){
+    const t = time*(l===0?0.25:0.16) + l*50;
+    for(let i=0;i<5;i++){
+      const fxx = ((i*97 + t*22) % (W+120)) - 60;
+      const fyy = ((i*53 + t*14) % (H+60)) - 30;
+      const r = 60 + (i%3)*22;
+      const g = ctx.createRadialGradient(fxx,fyy,4, fxx,fyy,r);
+      g.addColorStop(0,'rgba(140,170,210,'+inten*(l===0?1:0.7)+')');
+      g.addColorStop(1,'rgba(140,170,210,0)');
+      ctx.fillStyle=g; ctx.fillRect(fxx-r,fyy-r,r*2,r*2);
+    }
+  }
+  ctx.restore();
+}
+
+function drawLight(sx,sy){
+  const px = player.x-sx, py = player.y-sy;
+  const R = lightRadius();
+  const dark = 0.965 - collected*0.02;   // noche un poco más densa con pistas
+  const g = ctx.createRadialGradient(px,py,3, px,py,R);
+  g.addColorStop(0,'rgba(6,6,16,0)');
+  g.addColorStop(0.45,'rgba(6,6,16,'+(dark*0.35)+')');
+  g.addColorStop(1,'rgba(6,6,16,'+dark+')');
+  ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+}
+
+function bar(x,y,w,h,val,col){
+  ctx.fillStyle='#0a0a12'; ctx.fillRect(x-1,y-1,w+2,h+2);
+  ctx.fillStyle='#141428'; ctx.fillRect(x,y,w,h);
+  ctx.fillStyle=col; ctx.fillRect(x,y, Math.max(0,Math.round(w*val/100)), h);
+  ctx.fillStyle='rgba(224,224,232,0.35)'; ctx.fillRect(x,y,Math.max(0,Math.round(w*val/100)),1);
+}
+function drawHUD(){
+  ctx.font='8px ui-monospace, monospace'; ctx.textBaseline='top';
+  // cordura
+  ctx.fillStyle='#8a6b9c'; ctx.fillText('COR', 5, 5);
+  bar(26,5,52,5, player.sanity, player.sanity>40?'#6b8f5a':'#b03a3a');
+  // batería
+  ctx.fillStyle='#8a6b9c'; ctx.fillText('BAT', 5, 14);
+  bar(26,14,52,5, player.battery, player.battery>25?'#d4a24a':'#b03a3a');
+  // 5 pistas
+  const bx0 = 92;
+  ctx.fillStyle='#8a6b9c'; ctx.fillText('PISTAS', bx0, 5);
+  for(let i=0;i<TOTAL_CLUES;i++){
+    const x = bx0+4 + i*9, y=14;
+    ctx.fillStyle='#141428'; ctx.fillRect(x-1,y-1,8,8);
+    ctx.fillStyle = i<collected? '#b03a3a':'#2a3a5c'; ctx.fillRect(x,y,6,6);
+    if(i<collected){ ctx.fillStyle='#e0e0e8'; ctx.fillRect(x+2,y+2,2,2); }
+  }
+  // minimapa (arriba derecha)
+  const mw=46, mh=46, mx=W-mw-4, my=4;
+  ctx.fillStyle='rgba(6,6,16,0.85)'; ctx.fillRect(mx-1,my-1,mw+2,mh+2);
+  ctx.strokeStyle='#2a3a5c'; ctx.strokeRect(mx-1.5,my-1.5,mw+2,mh+2);
+  ctx.drawImage(mini, 0,0,MAPW,MAPH, mx,my,mw,mh);
+  // marcador de la mansión (objetivo) en el minimapa
+  ctx.fillStyle='#b03a3a';
+  ctx.fillRect(mx + (50*TS/WORLD_W)*mw - 1, my + (46*TS/WORLD_H)*mh - 1, 3, 3);
+  // jugador en minimapa
+  const pmx = mx + (player.x/WORLD_W)*mw, pmy = my + (player.y/WORLD_H)*mh;
+  ctx.fillStyle='#e8d9a0'; ctx.fillRect(pmx-1,pmy-1,3,3);
+  // indicador de linterna
+  ctx.fillStyle = player.flash? '#d4a24a':'#2a3a5c';
+  ctx.fillText(player.flash?'💡ON':'💡OFF', 5, 24);
+  // aviso contextual
+  if(nearInter && nearInter.label && hintT<=0){
+    ctx.fillStyle='rgba(6,6,16,0.8)'; ctx.fillRect(0,H-30,W,14);
+    ctx.fillStyle='#e8d9a0'; const t=nearInter.label; const w=ctx.measureText(t).width;
+    ctx.fillText(t, (W-w)/2, H-28);
+  }
+  if(hintT>0){ ctx.fillStyle='#e8d9a0'; const w=ctx.measureText(hintText).width;
+    ctx.fillText(hintText,(W-w)/2, H-14); }
+  // flash rojo de daño
+  if(hurtFlash>0){ ctx.fillStyle='rgba(176,58,58,'+(hurtFlash*0.35)+')'; ctx.fillRect(0,0,W,H); }
+}
+
+function drawDialog(){
+  const pad=6, bh=46, by=H-bh-4;
+  ctx.fillStyle='rgba(6,6,16,0.94)'; ctx.fillRect(pad,by,W-pad*2,bh);
+  ctx.strokeStyle='#5b7fa8'; ctx.strokeRect(pad+.5,by+.5,W-pad*2-1,bh-1);
+  ctx.font='8px ui-monospace, monospace'; ctx.textBaseline='top';
+  const full = dialog.lines[dialog.i]||'';
+  const maxC = Math.floor(dialog.t*33);
+  const shown = full.slice(0, maxC);
+  const lines = wrapText(shown, W-pad*2-12);
+  ctx.fillStyle='#c9d4e8';
+  for(let i=0;i<lines.length && i<4;i++) ctx.fillText(lines[i], pad+6, by+7+i*10);
+  if(maxC>=full.length){
+    const blink = Math.floor(time*2)%2===0;
+    if(blink){ ctx.fillStyle='#e8d9a0'; ctx.fillText('E ▸', W-pad-24, by+bh-12); }
+  }
+}
+
+function drawTitle(){
+  ctx.fillStyle='rgba(5,5,10,0.92)'; ctx.fillRect(0,0,W,H);
+  ctx.textBaseline='top';
+  ctx.font='bold 16px ui-monospace, monospace'; ctx.fillStyle='#b03a3a';
+  const t1='EL MISTERIO'; const t2='DEL PUEBLO';
+  ctx.fillText(t1,(W-ctx.measureText(t1).width)/2, 26);
+  ctx.fillStyle='#e8d9a0'; ctx.fillText(t2,(W-ctx.measureText(t2).width)/2, 44);
+  ctx.font='8px ui-monospace, monospace'; ctx.fillStyle='#8a6b9c';
+  const s='Reúne 5 pistas · Resuelve el misterio';
+  ctx.fillText(s,(W-ctx.measureText(s).width)/2, 68);
+  // fantasma decorativo
+  drawSprite(SPR.ghostFrames[Math.floor(time*3)%3], W/2-8, 84, 0.5, false);
+  ctx.fillStyle='#5b7fa8';
+  const has = load()? 'ENTER: Continuar   ·   N: Nueva partida':'ENTER / TOCA: Empezar';
+  ctx.fillText(has,(W-ctx.measureText(has).width)/2, 116);
+  ctx.fillStyle='#3d5a80';
+  const c1='WASD/Flechas mover · E interactuar · F linterna';
+  ctx.fillText(c1,(W-ctx.measureText(c1).width)/2, 132);
+}
+
+function drawOver(){
+  ctx.fillStyle='rgba(10,4,4,0.9)'; ctx.fillRect(0,0,W,H);
+  ctx.textBaseline='top';
+  ctx.font='bold 16px ui-monospace, monospace'; ctx.fillStyle='#b03a3a';
+  const t='GAME OVER';
+  ctx.fillText(t,(W-ctx.measureText(t).width)/2, 50);
+  ctx.font='8px ui-monospace, monospace'; ctx.fillStyle='#c9d4e8';
+  const s='La niebla consumió tu cordura...';
+  ctx.fillText(s,(W-ctx.measureText(s).width)/2, 76);
+  const s2='ENTER / TOCA para reintentar';
+  ctx.fillStyle='#8a6b9c'; ctx.fillText(s2,(W-ctx.measureText(s2).width)/2, 96);
+  const s3='Pistas encontradas: '+collected+'/'+TOTAL_CLUES;
+  ctx.fillStyle='#5b7fa8'; ctx.fillText(s3,(W-ctx.measureText(s3).width)/2, 110);
+}
+
+function drawFinal(){
+  ctx.fillStyle='rgba(4,8,14,0.92)'; ctx.fillRect(0,0,W,H);
+  ctx.textBaseline='top';
+  ctx.font='bold 14px ui-monospace, monospace'; ctx.fillStyle='#e8d9a0';
+  const t='MISTERIO RESUELTO';
+  ctx.fillText(t,(W-ctx.measureText(t).width)/2, 26);
+  ctx.font='8px ui-monospace, monospace'; ctx.fillStyle='#c9d4e8';
+  const lines=[
+    'La niebla se disipa y el pueblo despierta.',
+    'Los cinco objetos descansan juntos:',
+    'diario, llave, foto, medallón y carta.',
+    '',
+    'Los fantasmas por fin encuentran la paz.'
+  ];
+  for(let i=0;i<lines.length;i++) ctx.fillText(lines[i], 34, 56+i*12);
+  ctx.fillStyle='#6b8f5a';
+  const s='ENTER / TOCA para volver al título';
+  ctx.fillText(s,(W-ctx.measureText(s).width)/2, 132);
+}
+
+/* ============================== ARRANQUE ================================== */
+function resizeCanvas(){
+  const fit = Math.min(innerWidth/W, innerHeight/H);
+  let scale = Math.floor(fit);
+  // pantallas pequeñas (móvil): usar ajuste fraccional para llenar mejor
+  if(scale < 2) scale = fit;
+  cv.style.width = (W*scale)+'px'; cv.style.height = (H*scale)+'px';
+}
+addEventListener('resize', resizeCanvas);
+
+function startGame(retry){
+  const sv = retry? null : load();
+  const useSeed = (sv && sv.seed!=null && !retry) ? sv.seed : (retry? (Date.now()%100000) : seed);
+  const sd = genMap(useSeed);
+  spawnPoint = { x:sd.spawnX, y:sd.spawnY };
+  buildGhosts();
+  player.x = spawnPoint.x; player.y = spawnPoint.y; player.dir='down'; player.frame=0;
+  player.sanity=100; player.battery=100; player.flash=true; collected=0;
+  // descubrimiento
+  disc.fill(0); mctx.clearRect(0,0,MAPW,MAPH);
+  if(sv){
+    player.x=sv.x; player.y=sv.y; player.sanity=sv.sanity; player.battery=sv.battery;
+    player.flash = sv.flash!==false; collected=sv.collected||0;
+    if(sv.items) ITEMS.forEach((it,i)=>{ if(sv.items[i]) it.taken=true; });
+    if(sv.unlocked) sv.unlocked.forEach(k=> unlocked[k]=1);
+    if(sv.disc){ const s=sv.disc; for(let i=0;i<s.length && i<disc.length;i++){ disc[i] = s.charCodeAt(i)===49?1:0;
+        if(disc[i]){ mctx.fillStyle=tileMiniColor(map[i]); mctx.fillRect(i%MAPW, (i/MAPW)|0,1,1); } } }
+  }
+  cam.x = Math.max(0, Math.min(WORLD_W-W, player.x-W/2));
+  cam.y = Math.max(0, Math.min(WORLD_H-H, player.y-H/2));
+  if(!sv) discoverAround();
+  state='play';
+  if(master && !muted) master.gain.value=0.9;
+  say([
+    'Año 1923. Llegas al pueblo de Valdemora entre la niebla.',
+    'Debes reunir 5 pistas y llevarlas a la mansión central.',
+    'La linterna (F) ahuyenta a los fantasmas, pero gasta batería.',
+    'Los fantasmas te roban cordura al tocarte. ¡Sobrevive!'
+  ]);
+  // N para nueva partida desde el título
+}
+// tecla N para partida nueva / borrar guardado
+addEventListener('keydown', e=>{ if(state==='title' && (e.code==='KeyN')){ clearSave(); startGame(true); } });
+
+/* ---- game loop con delta time ---- */
+let last = performance.now();
+function loop(now){
+  let dt = (now-last)/1000; last=now;
+  if(dt>0.05) dt=0.05;                 // limita saltos grandes
+  if(state==='play') update(dt);
+  else if(state==='title' || state==='over' || state==='final') { time+=dt; updateCameraFallback(); }
+  render();
+  requestAnimationFrame(loop);
+}
+function updateCameraFallback(){}
+// autosave periódico
+setInterval(()=>{ if(state==='play') save(); }, 5000);
+
+/* ---- init ---- */
+resizeCanvas();
+setupTouch();
+(function boot(){
+  seed = 1337;
+  const sd = genMap(seed);
+  spawnPoint = { x:sd.spawnX, y:sd.spawnY };
+  player.x=spawnPoint.x; player.y=spawnPoint.y;
+  buildGhosts();
+  discoverAround();
+  cam.x = Math.max(0, Math.min(WORLD_W-W, player.x-W/2));
+  cam.y = Math.max(0, Math.min(WORLD_H-H, player.y-H/2));
+})();
+requestAnimationFrame(loop);
+
+/* ============================================================================
+   IDEAS PARA AMPLIARLO (3 líneas):
+   1) Añade un sistema de inventario y puzzles de combinación (usar la llave en
+      objetos, unir medallón + carta para desbloquear una puerta secreta).
+   2) Modo generación procedural por semilla / "New Game+" con fantasmas más
+      agresivos, linterna mejorable y logros guardados en localStorage.
+   3) Multijugador cooperativo ligero (WebRTC o WebSocket) y ranking en línea:
+      quién resuelve el misterio con más cordura, integrable con Telegram Mini App.
+   ============================================================================ */
+</script>
+</body>
+</html>

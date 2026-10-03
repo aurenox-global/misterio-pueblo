@@ -7,30 +7,31 @@
 <title>El Misterio del Pueblo — Pixel Ghosts</title>
 <style>
   /* ===== ESTILOS: canvas pixelado, responsive, controles táctiles ===== */
-  html,body{margin:0;padding:0;height:100%;background:#05050a;overflow:hidden;
+  html,body{margin:0;padding:0;width:100%;height:100%;background:#05050a;overflow:hidden;
     font-family:ui-monospace,'Courier New',monospace;color:#c9d4e8;
-    -webkit-tap-highlight-color:transparent;user-select:none}
-  #wrap{position:fixed;inset:0;display:flex;align-items:center;justify-content:center}
+    -webkit-tap-highlight-color:transparent;user-select:none;touch-action:none;
+    position:fixed;inset:0;overscroll-behavior:none}
+  #wrap{position:fixed;inset:0;overflow:hidden;background:#05050a}
   canvas#cv{image-rendering:pixelated;image-rendering:crisp-edges;
-    display:block;touch-action:none;background:#05050a;
-    box-shadow:0 0 0 2px #141428, 0 0 40px #000 inset}
+    display:block;width:100%;height:100%;touch-action:none;background:#05050a}
   /* Controles táctiles (solo se muestran en pantallas táctiles) */
   #touch{position:fixed;inset:0;display:none;pointer-events:none;z-index:10}
   #touch.on{display:block}
-  #stick{position:absolute;left:18px;bottom:18px;width:120px;height:120px;
-    border:2px solid rgba(91,127,168,.5);border-radius:50%;
-    background:rgba(10,10,18,.35);pointer-events:auto;touch-action:none}
-  #knob{position:absolute;left:38px;top:38px;width:44px;height:44px;border-radius:50%;
-    background:rgba(91,127,168,.55);border:2px solid rgba(224,224,232,.5)}
-  .btn{position:absolute;width:62px;height:62px;border-radius:50%;
-    display:flex;align-items:center;justify-content:center;font-size:20px;font-weight:bold;
-    background:rgba(30,36,64,.75);border:2px solid rgba(91,127,168,.7);color:#e8d9a0;
-    pointer-events:auto;touch-action:none}
-  #btnE{right:104px;bottom:34px}#btnF{right:26px;bottom:96px}
+  #stick{position:absolute;left:20px;bottom:calc(26px + env(safe-area-inset-bottom));width:132px;height:132px;
+    border:2px solid rgba(91,127,168,.6);border-radius:50%;
+    background:rgba(10,10,18,.42);pointer-events:auto;touch-action:none}
+  #knob{position:absolute;left:42px;top:42px;width:48px;height:48px;border-radius:50%;
+    background:rgba(91,127,168,.7);border:2px solid rgba(224,224,232,.6)}
+  .btn{position:absolute;width:74px;height:74px;border-radius:50%;
+    display:flex;align-items:center;justify-content:center;font-size:24px;font-weight:bold;
+    background:rgba(30,36,64,.82);border:2px solid rgba(91,127,168,.85);color:#e8d9a0;
+    pointer-events:auto;touch-action:none;box-shadow:0 3px 14px rgba(0,0,0,.5)}
+  #btnE{right:118px;bottom:calc(40px + env(safe-area-inset-bottom))}
+  #btnF{right:30px;bottom:calc(112px + env(safe-area-inset-bottom))}
   #mute{position:fixed;top:6px;right:6px;z-index:11;font-size:14px;
     background:rgba(10,10,18,.6);border:1px solid #2a3a5c;color:#8a6b9c;border-radius:4px;
     padding:2px 6px;cursor:pointer;display:block}
-  #share{position:fixed;left:50%;bottom:16px;transform:translateX(-50%);z-index:12;
+  #share{position:fixed;left:50%;bottom:calc(16px + env(safe-area-inset-bottom));transform:translateX(-50%);z-index:12;
     display:none;background:#e8d9a0;color:#1a1208;border:none;border-radius:9px;
     padding:11px 18px;font:bold 14px ui-monospace,'Courier New',monospace;cursor:pointer;
     box-shadow:0 4px 18px rgba(0,0,0,.65)}
@@ -57,7 +58,7 @@
 'use strict';
 
 /* ============================== CONFIG ==================================== */
-const W = 240, H = 160;         // resolución lógica del canvas
+let W = 240, H = 160;           // resolución lógica (se adapta a la pantalla del móvil)
 const TS = 16;                  // tamaño de tile en px
 const MAPW = 100, MAPH = 100;   // mapa de 100x100 tiles
 const WORLD_W = MAPW * TS, WORLD_H = MAPH * TS;
@@ -507,30 +508,30 @@ addEventListener('keyup', e=>{ keys[e.code]=false; });
 // Input táctil
 let touchDir = {x:0,y:0};
 function setupTouch(){
-  const isTouch = ('ontouchstart' in window) || navigator.maxTouchPoints>0;
-  if(!isTouch) return;
+  const tg = window.Telegram && window.Telegram.WebApp;
+  const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
+  const show = ('ontouchstart' in window) || navigator.maxTouchPoints>0 || coarse || !!tg || Math.min(innerWidth,innerHeight)<820;
+  if(!show) return;
   document.getElementById('touch').classList.add('on');
-  document.getElementById('mute').classList.add('on');
   const stick = document.getElementById('stick'), knob = document.getElementById('knob');
-  let id=null, cx=0, cy=0, R=44;
-  const start = e=>{ const t=e.changedTouches[0]; id=t.identifier; const r=stick.getBoundingClientRect(); cx=r.left+r.width/2; cy=r.top+r.height/2; move(e); e.preventDefault(); };
-  const move = e=>{ for(const t of e.changedTouches){ if(t.identifier!==id) continue;
-      let dx=t.clientX-cx, dy=t.clientY-cy; const d=Math.hypot(dx,dy)||1; const cl=Math.min(d,R);
-      dx=dx/d*cl; dy=dy/d*cl; knob.style.left=(38+dx)+'px'; knob.style.top=(38+dy)+'px';
-      touchDir.x = Math.abs(dx)<8?0:Math.sign(dx); touchDir.y = Math.abs(dy)<8?0:Math.sign(dy);
-      if(Math.abs(dx)>=8 && Math.abs(dy)<8) touchDir.y=0; if(Math.abs(dy)>=8 && Math.abs(dx)<8) touchDir.x=0;
-    } e.preventDefault(); };
-  const end = e=>{ for(const t of e.changedTouches) if(t.identifier===id){ id=null; touchDir.x=0; touchDir.y=0;
-      knob.style.left='38px'; knob.style.top='38px'; } };
-  stick.addEventListener('touchstart',start,{passive:false});
-  stick.addEventListener('touchmove',move,{passive:false});
-  stick.addEventListener('touchend',end); stick.addEventListener('touchcancel',end);
-  const tap=(el,code)=>{ el.addEventListener('touchstart',e=>{ just[code]=true; initAudio(); e.preventDefault(); },{passive:false}); };
+  const KB = 42;                    // centra el knob (48px) dentro del stick (132px)
+  let id=null, cx=0, cy=0; const R=46;
+  const move = (x,y)=>{ let dx=x-cx, dy=y-cy; const d=Math.hypot(dx,dy)||1; const cl=Math.min(d,R);
+    dx=dx/d*cl; dy=dy/d*cl; knob.style.left=(KB+dx)+'px'; knob.style.top=(KB+dy)+'px';
+    touchDir.x = Math.abs(dx)<9?0:Math.sign(dx); touchDir.y = Math.abs(dy)<9?0:Math.sign(dy);
+    if(Math.abs(dx)>=9 && Math.abs(dy)<9) touchDir.y=0; if(Math.abs(dy)>=9 && Math.abs(dx)<9) touchDir.x=0;
+  };
+  stick.addEventListener('pointerdown', e=>{ id=e.pointerId; try{ stick.setPointerCapture(id); }catch(_){}
+    const r=stick.getBoundingClientRect(); cx=r.left+r.width/2; cy=r.top+r.height/2; move(e.clientX,e.clientY); initAudio(); e.preventDefault(); },{passive:false});
+  stick.addEventListener('pointermove', e=>{ if(e.pointerId!==id) return; move(e.clientX,e.clientY); e.preventDefault(); },{passive:false});
+  const release = e=>{ if(e.pointerId!==id) return; id=null; touchDir.x=0; touchDir.y=0; knob.style.left=KB+'px'; knob.style.top=KB+'px'; };
+  stick.addEventListener('pointerup', release); stick.addEventListener('pointercancel', release);
+  const tap=(el,code)=>{ el.addEventListener('pointerdown',e=>{ just[code]=true; initAudio(); e.preventDefault(); },{passive:false}); };
   tap(document.getElementById('btnE'),'KeyE');
   tap(document.getElementById('btnF'),'KeyF');
-  // toque en el canvas para avanzar pantallas / diálogos
-  const cv = document.getElementById('cv');
-  cv.addEventListener('touchstart', e=>{ initAudio();
+  // toca el juego para avanzar pantallas / interactuar
+  const cvEl = document.getElementById('cv');
+  cvEl.addEventListener('pointerdown', e=>{ initAudio();
     if(state==='title') startGame(false);
     else if(state==='over') startGame(true);
     else if(state==='final') state='title';
@@ -1099,46 +1100,49 @@ function drawDialog(){
 }
 
 function drawTitle(){
+  const oy = Math.max(0, (H-160)/2);
   ctx.fillStyle='rgba(5,5,10,0.92)'; ctx.fillRect(0,0,W,H);
   ctx.textBaseline='top';
   ctx.font='bold 16px ui-monospace, monospace'; ctx.fillStyle='#b03a3a';
   const t1='EL MISTERIO'; const t2='DEL PUEBLO';
-  ctx.fillText(t1,(W-ctx.measureText(t1).width)/2, 26);
-  ctx.fillStyle='#e8d9a0'; ctx.fillText(t2,(W-ctx.measureText(t2).width)/2, 44);
+  ctx.fillText(t1,(W-ctx.measureText(t1).width)/2, 26+oy);
+  ctx.fillStyle='#e8d9a0'; ctx.fillText(t2,(W-ctx.measureText(t2).width)/2, 44+oy);
   ctx.font='8px ui-monospace, monospace'; ctx.fillStyle='#8a6b9c';
   const s='Reúne 5 pistas · Resuelve el misterio';
-  ctx.fillText(s,(W-ctx.measureText(s).width)/2, 68);
+  ctx.fillText(s,(W-ctx.measureText(s).width)/2, 68+oy);
   // fantasma decorativo
-  drawSprite(SPR.ghostFrames[Math.floor(time*3)%3], W/2-8, 84, 0.5, false);
+  drawSprite(SPR.ghostFrames[Math.floor(time*3)%3], W/2-8, 84+oy, 0.5, false);
   ctx.fillStyle='#5b7fa8';
-  const has = load()? 'ENTER: Continuar   ·   N: Nueva partida':'ENTER / TOCA: Empezar';
-  ctx.fillText(has,(W-ctx.measureText(has).width)/2, 116);
+  const has = load()? 'ENTER: Continuar   ·   N: Nueva partida':'TOCA LA PANTALLA: Empezar';
+  ctx.fillText(has,(W-ctx.measureText(has).width)/2, 116+oy);
   ctx.fillStyle='#3d5a80';
-  const c1='WASD/Flechas mover · E interactuar · F linterna';
-  ctx.fillText(c1,(W-ctx.measureText(c1).width)/2, 132);
+  const c1='Mueve con el joystick · E interactuar · F linterna';
+  ctx.fillText(c1,(W-ctx.measureText(c1).width)/2, 132+oy);
 }
 
 function drawOver(){
+  const oy = Math.max(0, (H-160)/2);
   ctx.fillStyle='rgba(10,4,4,0.9)'; ctx.fillRect(0,0,W,H);
   ctx.textBaseline='top';
   ctx.font='bold 16px ui-monospace, monospace'; ctx.fillStyle='#b03a3a';
   const t='GAME OVER';
-  ctx.fillText(t,(W-ctx.measureText(t).width)/2, 50);
+  ctx.fillText(t,(W-ctx.measureText(t).width)/2, 50+oy);
   ctx.font='8px ui-monospace, monospace'; ctx.fillStyle='#c9d4e8';
   const s='La niebla consumió tu cordura...';
-  ctx.fillText(s,(W-ctx.measureText(s).width)/2, 76);
-  const s2='ENTER / TOCA para reintentar';
-  ctx.fillStyle='#8a6b9c'; ctx.fillText(s2,(W-ctx.measureText(s2).width)/2, 96);
+  ctx.fillText(s,(W-ctx.measureText(s).width)/2, 76+oy);
+  const s2='TOCA para reintentar';
+  ctx.fillStyle='#8a6b9c'; ctx.fillText(s2,(W-ctx.measureText(s2).width)/2, 96+oy);
   const s3='Pistas encontradas: '+collected+'/'+TOTAL_CLUES;
-  ctx.fillStyle='#5b7fa8'; ctx.fillText(s3,(W-ctx.measureText(s3).width)/2, 110);
+  ctx.fillStyle='#5b7fa8'; ctx.fillText(s3,(W-ctx.measureText(s3).width)/2, 110+oy);
 }
 
 function drawFinal(){
+  const oy = Math.max(0, (H-160)/2);
   ctx.fillStyle='rgba(4,8,14,0.92)'; ctx.fillRect(0,0,W,H);
   ctx.textBaseline='top';
   ctx.font='bold 14px ui-monospace, monospace'; ctx.fillStyle='#e8d9a0';
   const t='MISTERIO RESUELTO';
-  ctx.fillText(t,(W-ctx.measureText(t).width)/2, 26);
+  ctx.fillText(t,(W-ctx.measureText(t).width)/2, 26+oy);
   ctx.font='8px ui-monospace, monospace'; ctx.fillStyle='#c9d4e8';
   const lines=[
     'La niebla se disipa y el pueblo despierta.',
@@ -1147,21 +1151,22 @@ function drawFinal(){
     '',
     'Los fantasmas por fin encuentran la paz.'
   ];
-  for(let i=0;i<lines.length;i++) ctx.fillText(lines[i], 34, 56+i*12);
+  for(let i=0;i<lines.length;i++) ctx.fillText(lines[i], 34, 56+oy+i*12);
   ctx.fillStyle='#6b8f5a';
-  const s='ENTER / TOCA para volver al título';
-  ctx.fillText(s,(W-ctx.measureText(s).width)/2, 132);
+  const s='TOCA para volver al título';
+  ctx.fillText(s,(W-ctx.measureText(s).width)/2, 132+oy);
 }
 
 /* ============================== ARRANQUE ================================== */
-function resizeCanvas(){
-  const fit = Math.min(innerWidth/W, innerHeight/H);
-  let scale = Math.floor(fit);
-  // pantallas pequeñas (móvil): usar ajuste fraccional para llenar mejor
-  if(scale < 2) scale = fit;
-  cv.style.width = (W*scale)+'px'; cv.style.height = (H*scale)+'px';
+function fitViewport(){
+  const vw = innerWidth, vh = innerHeight;
+  if(vh >= vw){ W = 240; H = Math.round(240 * vh / vw); }   // retrato: ancho lógico fijo
+  else        { H = 160; W = Math.round(160 * vw / vh); }   // apaisado: alto lógico fijo
+  cv.width = W; cv.height = H; ctx.imageSmoothingEnabled = false;
+  cv.style.width = vw+'px'; cv.style.height = vh+'px';
 }
-addEventListener('resize', resizeCanvas);
+addEventListener('resize', fitViewport);
+addEventListener('orientationchange', ()=>setTimeout(fitViewport,150));
 
 function startGame(retry){
   const sv = retry? null : load();
@@ -1222,7 +1227,7 @@ if(shareBtn) shareBtn.addEventListener('click', ()=>{
 setInterval(()=>{ if(state==='play') save(); }, 5000);
 
 /* ---- init ---- */
-resizeCanvas();
+fitViewport();
 setupTouch();
 (function boot(){
   seed = 1337;

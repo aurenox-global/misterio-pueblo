@@ -15,8 +15,7 @@
   canvas#cv{image-rendering:pixelated;image-rendering:crisp-edges;
     display:block;width:100%;height:100%;touch-action:none;background:#05050a}
   /* Controles táctiles (solo se muestran en pantallas táctiles) */
-  #touch{position:fixed;inset:0;display:none;pointer-events:none;z-index:10}
-  #touch.on{display:block}
+  #touch{position:fixed;inset:0;pointer-events:none;z-index:10}
   #stick{position:absolute;left:20px;bottom:calc(26px + env(safe-area-inset-bottom));width:132px;height:132px;
     border:2px solid rgba(91,127,168,.6);border-radius:50%;
     background:rgba(10,10,18,.42);pointer-events:auto;touch-action:none}
@@ -508,11 +507,7 @@ addEventListener('keyup', e=>{ keys[e.code]=false; });
 // Input táctil
 let touchDir = {x:0,y:0};
 function setupTouch(){
-  const tg = window.Telegram && window.Telegram.WebApp;
-  const coarse = window.matchMedia && window.matchMedia('(pointer: coarse)').matches;
-  const show = ('ontouchstart' in window) || navigator.maxTouchPoints>0 || coarse || !!tg || Math.min(innerWidth,innerHeight)<820;
-  if(!show) return;
-  document.getElementById('touch').classList.add('on');
+  // Controles SIEMPRE visibles: pointer events funcionan con dedo y con ratón.
   const stick = document.getElementById('stick'), knob = document.getElementById('knob');
   const KB = 42;                    // centra el knob (48px) dentro del stick (132px)
   let id=null, cx=0, cy=0; const R=46;

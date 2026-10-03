@@ -125,6 +125,16 @@ function kbPremium() {
   rows.push(back);
   return { inline_keyboard: rows };
 }
+/* Teclado FIJO en la parte de abajo del chat (siempre visible) */
+const kbReply = () => ({
+  keyboard: [
+    [{ text: '🎮 Jugar ahora', web_app: { url: WEBAPP_URL } }],
+    [{ text: '⭐ Premium' }, { text: '🧾 Historial' }],
+    [{ text: '🏆 Ranking' }, { text: '❓ Ayuda' }]
+  ],
+  resize_keyboard: true,
+  is_persistent: true
+});
 
 const T_START = (name) =>
   `👻 <b>El Misterio del Pueblo</b>\n\n` +
@@ -223,15 +233,17 @@ async function handleMessage(m) {
       { inline_keyboard: [[{ text: '🎮 Jugar', web_app: { url: WEBAPP_URL } }], back] });
   }
   const text = (m.text || '').trim();
+  // Botones del teclado inferior (reply keyboard)
+  const BTN = { '🎮 Jugar ahora': 'menu', '⭐ Premium': 'premium', '🧾 Historial': 'historial', '🏆 Ranking': 'ranking', '❓ Ayuda': 'ayuda' };
+  if (BTN[text]) { const s = screen(BTN[text], from); return send(m.chat.id, s.text, s.kb); }
   const cmd = text.split(' ')[0].toLowerCase().replace(/@.*$/, '');
   if (cmd === '/start' || cmd === '/menu' || !text) {
-    return send(m.chat.id, T_START(from.first_name || 'investigador'), kbMain());
+    return send(m.chat.id, T_START(from.first_name || 'investigador'), kbReply());
   }
-  // Comandos antiguos -> siguen funcionando, pero redirigen a botones
   const alias = { '/play': 'menu', '/jugar': 'menu', '/premium': 'premium', '/pagar': 'premium', '/tienda': 'premium',
                   '/ranking': 'ranking', '/mispagos': 'historial', '/historial': 'historial', '/help': 'ayuda', '/ayuda': 'ayuda' };
   if (alias[cmd]) { const s = screen(alias[cmd], from); return send(m.chat.id, s.text, s.kb); }
-  return send(m.chat.id, T_START(from.first_name || 'investigador'), kbMain());
+  return send(m.chat.id, T_START(from.first_name || 'investigador'), kbReply());
 }
 
 /* ============================== LONG POLLING ============================== */
